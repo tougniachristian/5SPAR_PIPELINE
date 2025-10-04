@@ -1,0 +1,77 @@
+version: "3.8"
+
+services:
+
+  zookeeper:
+    image: bitnamilegacy/zookeeper:3.9.1
+    container_name: zookeeper
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    ports:
+      - "2181:2181"
+    networks:
+      - pg_network
+
+  kafka:
+    image: bitnamilegacy/kafka:3.6.1
+    container_name: kafka
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    networks:
+      - pg_network
+
+  jupyter:
+    image: jupyter/all-spark-notebook:python-3.10
+    container_name: jupyter
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - SPARK_OPTS=--driver-java-options=-Dlog4j.logLevel=ERROR --packages org.postgresql:postgresql:42.6.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.0
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./spark-apps:/home/jovyan/spark-apps
+      - ./spark-apps:/home/jovyan/notebooks
+      - ./spark-apps:/home/jovyan/mastodon-ingester
+      - ./jars:/home/jovyan/jars
+    ports:
+      - "8888:8888"
+    depends_on:
+      - kafka
+    networks:
+      - pg_network
+
+  mastodon-ingester:
+    build: ./mastodon-ingester
+    container_name: mastodon-ingester
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC=mastodon_stream
+      - MASTODON_BASE_URL=https://mastodon.social
+      - MASTODON_ACCESS_TOKEN=Om0RR7q77Pv-wK6cwmrARonh9x1-Y3S329uiW_DApGw
+    volumes:
+      - ./mastodon-ingester:/app
+    networks:
+      - pg_network
+
+  kafka-client:
+    image: bitnamilegacy/kafka:3.6.1
+    container_name: kafka-client
+    depends_on:
+      - kafka
+    command: "sleep infinity"
+    networks:
+      - pg_network
+
+networks:
+  pg_network:
+    external: true
+    name: check_client_pg_network
